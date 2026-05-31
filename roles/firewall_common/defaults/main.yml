@@ -1,0 +1,95 @@
+---
+# roles/firewall_common/defaults/main.yml
+
+# ─── Общие настройки ───────────────────────────────────────────────────────
+firewall_backup: true
+firewall_cleanup_old_backups: true
+firewall_reset: false
+debug_mode: false
+firewall_allow_no_firewall: false
+
+# ─── Пути для бэкапов ─────────────────────────────────────────────────────
+firewall_backup_base_dir: /var/backup/firewall
+firewall_backup_dir: >-
+  {{ firewall_backup_base_dir }}/{{ ansible_date_time.date }}_{{ ansible_date_time.hour }}-{{ ansible_date_time.minute }}
+firewall_backup_archive_path: >-
+  {{ firewall_backup_base_dir }}/{{ inventory_hostname }}-firewall-{{ ansible_date_time.date }}.tar.gz
+
+# ─── Политики по умолчанию ────────────────────────────────────────────────
+firewall_default_in: deny
+firewall_default_out: allow
+firewall_default_forward: deny
+firewall_logging_level: low
+
+# ─── Firewalld ────────────────────────────────────────────────────────────
+firewall_default_zone: public
+
+# ─── Rate limiting ────────────────────────────────────────────────────────
+firewall_rate_limit_ssh: true
+firewall_rate_limit_http: false
+firewall_rate_limit_https: false
+
+# ─── SSH Hardening ────────────────────────────────────────────────────────
+ssh_permit_root_login: without-password
+ssh_password_auth: "no"
+ssh_pubkey_auth: "yes"
+ssh_x11_forwarding: "no"
+ssh_tcp_forwarding: "yes"
+ssh_agent_forwarding: "yes"
+ssh_client_alive_interval: 300
+ssh_client_alive_count_max: 2
+ssh_max_auth_tries: 3
+ssh_max_sessions: 10
+ssh_login_grace_time: 60
+ssh_log_level: INFO
+
+# ─── Стандартные правила (все ОС) ─────────────────────────────────────────
+firewall_rules:
+  - port: 22
+    proto: tcp
+    rule: allow
+    comment: "SSH"
+  - port: 80
+    proto: tcp
+    rule: allow
+    comment: "HTTP"
+  - port: 443
+    proto: tcp
+    rule: allow
+    comment: "HTTPS"
+
+# ─── Порты Firewalld ──────────────────────────────────────────────────────
+firewall_ports:
+  - port: 22
+    proto: tcp
+    state: enabled
+  - port: 80
+    proto: tcp
+    state: enabled
+  - port: 443
+    proto: tcp
+    state: enabled
+
+# ─── Сервисы Firewalld ───────────────────────────────────────────────────
+firewall_services:
+  - name: ssh
+    state: enabled
+  - name: http
+    state: enabled
+  - name: https
+    state: enabled
+
+# ─── Параметры безопасности ────────────────────────────────────────────────
+firewall_syn_backlog: 2048
+firewall_syn_retries: 2
+firewall_fin_timeout: 30
+firewall_keepalive_time: 1200
+firewall_enable_fail2ban: false
+firewall_disabled_services: []
+
+# ─── Дополнительные (пустые по умолчанию) ────────────────────────────────
+firewall_zones: []
+custom_services: []
+custom_ports: []
+firewall_rich_rules: []
+firewall_direct_rules: []

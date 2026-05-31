@@ -1,0 +1,8 @@
+---
+# roles/ufw/defaults/main.yml
+
+firewall_logging_level: low
+firewall_reset: false
+firewall_rate_limit_ssh: true
+firewall_rate_limit_http: false
+firewall_rate_limit_https: false

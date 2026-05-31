@@ -1,0 +1,22 @@
+---
+# roles/firewall_security/defaults/main.yml
+
+firewall_syn_backlog: 2048
+firewall_syn_retries: 2
+firewall_fin_timeout: 30
+firewall_keepalive_time: 1200
+firewall_enable_fail2ban: false
+firewall_disabled_services: []
+
+ssh_permit_root_login: without-password
+ssh_password_auth: "no"
+ssh_pubkey_auth: "yes"
+ssh_x11_forwarding: "no"
+ssh_tcp_forwarding: "yes"
+ssh_agent_forwarding: "yes"
+ssh_client_alive_interval: 300
+ssh_client_alive_count_max: 2
+ssh_max_auth_tries: 3
+ssh_max_sessions: 10
+ssh_login_grace_time: 60
+ssh_log_level: INFO

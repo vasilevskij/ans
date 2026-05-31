@@ -1,0 +1,17 @@
+---
+# roles/firewalld/defaults/main.yml
+
+firewall_default_zone: public
+firewall_rate_limit_ssh: true
+firewall_rate_limit_http: false
+firewall_rate_limit_https: false
+
+firewall_services: []
+custom_services: []
+firewall_zones: []
+firewall_ports: []
+custom_ports: []
+firewall_rich_rules: []
+firewall_direct_rules: []
+
+debug_mode: false

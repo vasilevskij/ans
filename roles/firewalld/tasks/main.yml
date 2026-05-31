@@ -1,0 +1,176 @@
+---
+# roles/firewalld/tasks/main.yml
+# Настройка Firewalld для RHEL/Rocky/AlmaLinux
+
+# ──────────── Установка ────────────────────────────────────────────────────
+
+- name: Сбор фактов о пакетах
+  package_facts:
+    manager: auto
+
+- name: Установка firewalld (если отсутствует)
+  package:
+    name: firewalld
+    state: present
+  when: "'firewalld' not in ansible_facts.packages"
+
+- name: Включение и запуск firewalld
+  service:
+    name: firewalld
+    state: started
+    enabled: yes
+
+# ──────────── Зоны ────────────────────────────────────────────────────────
+
+- name: Установка зоны по умолчанию
+  firewalld:
+    zone: "{{ firewall_default_zone | default('public') }}"
+    state: enabled
+    permanent: yes
+  register: zone_default_result
+  notify: reload firewalld
+
+- name: Создание дополнительных зон
+  firewalld:
+    zone: "{{ item.name }}"
+    state: "{{ item.state | default('enabled') }}"
+    permanent: yes
+  loop: "{{ firewall_zones | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: firewall_zones | default([]) | length > 0
+  notify: reload firewalld
+
+# ──────────── Сервисы ─────────────────────────────────────────────────────
+
+- name: Добавление стандартных сервисов
+  firewalld:
+    service: "{{ item.name }}"
+    zone: "{{ item.zone | default(firewall_default_zone | default('public')) }}"
+    permanent: yes
+    state: "{{ item.state | default('enabled') }}"
+  loop: "{{ firewall_services | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: reload firewalld
+
+- name: Добавление кастомных сервисов
+  firewalld:
+    service: "{{ item.name }}"
+    zone: "{{ item.zone | default(firewall_default_zone | default('public')) }}"
+    permanent: yes
+    state: "{{ item.state | default('enabled') }}"
+  loop: "{{ custom_services | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: custom_services | default([]) | length > 0
+  notify: reload firewalld
+
+# ──────────── Порты ───────────────────────────────────────────────────────
+
+- name: Валидация портов перед добавлением
+  assert:
+    that:
+      - item.port | int >= 1
+      - item.port | int <= 65535
+      - item.proto | default('tcp') in ['tcp', 'udp']
+    fail_msg: "Ошибка в firewall_ports: порт={{ item.port }} proto={{ item.proto | default('tcp') }}"
+  loop: "{{ firewall_ports | default([]) }}"
+  loop_control:
+    label: "{{ item.port }}/{{ item.proto | default('tcp') }}"
+
+- name: Добавление стандартных портов
+  firewalld:
+    port: "{{ item.port }}/{{ item.proto | default('tcp') }}"
+    zone: "{{ item.zone | default(firewall_default_zone | default('public')) }}"
+    permanent: yes
+    state: "{{ item.state | default('enabled') }}"
+  loop: "{{ firewall_ports | default([]) }}"
+  loop_control:
+    label: "{{ item.port }}/{{ item.proto | default('tcp') }}"
+  register: ports_result
+  notify: reload firewalld
+
+- name: Добавление кастомных портов
+  firewalld:
+    port: "{{ item.port }}/{{ item.proto | default('tcp') }}"
+    zone: "{{ item.zone | default(firewall_default_zone | default('public')) }}"
+    permanent: yes
+    state: "{{ item.state | default('enabled') }}"
+  loop: "{{ custom_ports | default([]) }}"
+  loop_control:
+    label: "{{ item.port }}/{{ item.proto | default('tcp') }}"
+  when: custom_ports | default([]) | length > 0
+  notify: reload firewalld
+
+# ──────────── Rich Rules ───────────────────────────────────────────────────
+
+- name: Добавление rich rules
+  firewalld:
+    rich_rule: "{{ item.rule }}"
+    zone: "{{ item.zone | default(firewall_default_zone | default('public')) }}"
+    permanent: yes
+    state: "{{ item.state | default('enabled') }}"
+  loop: "{{ firewall_rich_rules | default([]) }}"
+  loop_control:
+    label: "{{ item.rule | truncate(60) }}"
+  when: firewall_rich_rules | default([]) | length > 0
+  notify: reload firewalld
+
+- name: Rate limiting SSH (rich rule)
+  firewalld:
+    rich_rule: 'rule family="ipv4" source address="0.0.0.0/0" service name="ssh" limit value="30/m" accept'
+    zone: "{{ firewall_default_zone | default('public') }}"
+    permanent: yes
+    state: enabled
+  when: firewall_rate_limit_ssh | default(true)
+  notify: reload firewalld
+
+# ──────────── Прямые правила (Direct Rules) ───────────────────────────────
+
+- name: Добавление direct rules
+  firewalld:
+    direct:
+      rule: "{{ item.rule }}"
+      chain: "{{ item.chain }}"
+      family: "{{ item.family | default('ipv4') }}"
+    permanent: yes
+    state: present
+  loop: "{{ firewall_direct_rules | default([]) }}"
+  loop_control:
+    label: "{{ item.rule | truncate(60) }}"
+  when: firewall_direct_rules | default([]) | length > 0
+  notify: reload firewalld
+
+# ──────────── Проверка и логирование ──────────────────────────────────────
+
+- name: Применение permanent конфигурации (reload)
+  service:
+    name: firewalld
+    state: reloaded
+
+- name: Проверка синтаксиса конфигурации
+  command: firewall-cmd --check-config
+  register: fwd_check
+  changed_when: false
+  failed_when: fwd_check.rc != 0
+
+- name: Финальное состояние Firewalld
+  command: firewall-cmd --list-all --zone={{ firewall_default_zone | default('public') }}
+  register: fwd_final
+  changed_when: false
+
+- name: Вывод финального состояния (debug)
+  debug:
+    msg: "{{ fwd_final.stdout_lines }}"
+  when: debug_mode | default(false)
+
+- name: Запись состояния Firewalld в лог
+  copy:
+    content: |
+      Firewalld Status — {{ inventory_hostname }} — {{ ansible_date_time.iso8601 }}
+      Config check: {{ 'PASS' if fwd_check.rc == 0 else 'FAIL' }}
+
+      {{ fwd_final.stdout }}
+    dest: "/var/log/ansible-firewall/firewalld-{{ inventory_hostname }}-{{ ansible_date_time.date }}.log"
+    mode: '0644'

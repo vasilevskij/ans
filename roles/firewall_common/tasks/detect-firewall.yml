@@ -1,0 +1,87 @@
+---
+# roles/firewall_common/tasks/detect-firewall.yml
+# Определяет тип файервола по ОС и установленному ПО
+
+- name: Информация о системе (debug)
+  debug:
+    msg: |
+      ===== ИНФОРМАЦИЯ О СИСТЕМЕ =====
+      OS Family:    {{ ansible_os_family }}
+      Distribution: {{ ansible_distribution }} {{ ansible_distribution_version }}
+      Hostname:     {{ inventory_hostname }}
+  when: debug_mode | default(false)
+
+- name: Проверка наличия команды ufw
+  command: which ufw
+  register: ufw_cmd_check
+  ignore_errors: yes
+  changed_when: false
+
+- name: Проверка наличия команды firewall-cmd
+  command: which firewall-cmd
+  register: firewalld_cmd_check
+  ignore_errors: yes
+  changed_when: false
+
+- name: Проверка статуса сервиса ufw
+  command: systemctl is-active ufw
+  register: ufw_active_check
+  ignore_errors: yes
+  changed_when: false
+
+- name: Проверка статуса сервиса firewalld
+  command: systemctl is-active firewalld
+  register: firewalld_active_check
+  ignore_errors: yes
+  changed_when: false
+
+- name: Установка переменных определения файервола
+  set_fact:
+    firewall_os_recommended: >-
+      {%- if ansible_os_family == 'Debian' -%}ufw
+      {%- elif ansible_os_family in ['RedHat', 'Fedora'] -%}firewalld
+      {%- else -%}none{%- endif -%}
+
+    firewall_currently_active: >-
+      {%- if ufw_active_check.rc == 0 -%}ufw
+      {%- elif firewalld_active_check.rc == 0 -%}firewalld
+      {%- else -%}none{%- endif -%}
+
+- name: Установка целевого файервола
+  set_fact:
+    target_firewall: >-
+      {%- if firewall_force | default('') in ['ufw', 'firewalld'] -%}
+      {{ firewall_force }}
+      {%- elif firewall_currently_active != 'none' -%}
+      {{ firewall_currently_active }}
+      {%- elif firewall_os_recommended != 'none' -%}
+      {{ firewall_os_recommended }}
+      {%- else -%}none{%- endif -%}
+
+- name: Итог определения файервола
+  debug:
+    msg: |
+      ===== РЕЗУЛЬТАТЫ ОПРЕДЕЛЕНИЯ ФАЙЕРВОЛА =====
+      ОС:              {{ ansible_distribution }} {{ ansible_distribution_version }}
+      Рекомендован:    {{ firewall_os_recommended }}
+      Активен сейчас:  {{ firewall_currently_active }}
+      ЦЕЛЕВОЙ:         {{ target_firewall }}
+  when: debug_mode | default(false)
+
+- name: Валидация значения target_firewall
+  assert:
+    that:
+      - target_firewall | trim in ['ufw', 'firewalld', 'none']
+    fail_msg: >
+      Недопустимое значение target_firewall: '{{ target_firewall }}'.
+      Допустимые: ufw, firewalld, none.
+
+- name: Остановка при отсутствии файервола
+  fail:
+    msg: |
+      ОШИБКА: На {{ inventory_hostname }} не найден поддерживаемый файервол.
+      ОС: {{ ansible_distribution }} {{ ansible_distribution_version }}
+      Установите firewall_allow_no_firewall: true чтобы пропустить.
+  when:
+    - target_firewall | trim == 'none'
+    - not (firewall_allow_no_firewall | default(false))

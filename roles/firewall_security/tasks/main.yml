@@ -1,0 +1,123 @@
+---
+# roles/firewall_security/tasks/main.yml
+# Общее усиление безопасности (sysctl + SSH hardening + fail2ban)
+
+# ──────────── Защита от сетевых атак (sysctl) ─────────────────────────────
+
+- name: Защита от SYN-flood (syncookies)
+  sysctl:
+    name: net.ipv4.tcp_syncookies
+    value: "1"
+    state: present
+    reload: yes
+
+- name: Ограничение SYN backlog
+  sysctl:
+    name: net.ipv4.tcp_max_syn_backlog
+    value: "{{ firewall_syn_backlog | default(2048) }}"
+    state: present
+    reload: yes
+
+- name: Уменьшение SYN retries
+  sysctl:
+    name: net.ipv4.tcp_syn_retries
+    value: "{{ firewall_syn_retries | default(2) }}"
+    state: present
+    reload: yes
+
+- name: Отключение ICMP redirect
+  sysctl:
+    name: net.ipv4.conf.all.accept_redirects
+    value: "0"
+    state: present
+    reload: yes
+
+- name: Защита от IP спуфинга (rp_filter)
+  sysctl:
+    name: net.ipv4.conf.all.rp_filter
+    value: "1"
+    state: present
+    reload: yes
+
+- name: Защита от ping-flood (ignore_broadcasts)
+  sysctl:
+    name: net.ipv4.icmp_echo_ignore_broadcasts
+    value: "1"
+    state: present
+    reload: yes
+
+- name: Настройка tcp_fin_timeout
+  sysctl:
+    name: net.ipv4.tcp_fin_timeout
+    value: "{{ firewall_fin_timeout | default(30) }}"
+    state: present
+    reload: yes
+
+- name: Настройка tcp_keepalive_time
+  sysctl:
+    name: net.ipv4.tcp_keepalive_time
+    value: "{{ firewall_keepalive_time | default(1200) }}"
+    state: present
+    reload: yes
+
+# ──────────── SSH Hardening ───────────────────────────────────────────────
+
+- name: Создание директории sshd_config.d
+  file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Применение SSH hardening конфигурации
+  template:
+    src: ssh_hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/99-ansible-hardening.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: sshd -t -f %s
+  notify: restart sshd
+
+# ──────────── Fail2ban (опционально) ─────────────────────────────────────
+
+- name: Настройка fail2ban
+  block:
+    - name: Проверка наличия /etc/fail2ban
+      stat:
+        path: /etc/fail2ban
+      register: fail2ban_stat
+
+    - name: Конфигурация jail для SSH
+      copy:
+        content: |
+          [sshd]
+          enabled  = true
+          port     = ssh
+          filter   = sshd
+          logpath  = /var/log/auth.log
+          maxretry = 3
+          bantime  = 3600
+        dest: /etc/fail2ban/jail.d/ssh.local
+        owner: root
+        group: root
+        mode: '0644'
+      when: fail2ban_stat.stat.exists
+
+    - name: Перезапуск fail2ban
+      service:
+        name: fail2ban
+        state: restarted
+      when: fail2ban_stat.stat.exists
+  when: firewall_enable_fail2ban | default(false)
+
+# ──────────── Отключение ненужных сервисов ────────────────────────────────
+
+- name: Остановка и отключение нежелательных сервисов
+  service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+  loop: "{{ firewall_disabled_services | default([]) }}"
+  ignore_errors: yes

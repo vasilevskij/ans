@@ -1,0 +1,28 @@
+---
+# inventory/production.yml
+
+all:
+  children:
+    debian_servers:
+      hosts:
+        ubuntu-ufw:
+          ansible_host: 10.0.2.5
+          ansible_user: ubuntu-ufw
+          ansible_become: true
+
+        debian-ufw:
+          ansible_host: 10.0.2.3
+          ansible_user: debian-ufw
+          ansible_become: true
+
+    redhat_servers:
+      hosts:
+        alma-firewalld:
+          ansible_host: 10.0.2.4
+          ansible_user: alma-firewalld
+          ansible_become: true
+
+        rocky-firewalld:
+          ansible_host: 10.0.2.15
+          ansible_user: rocky-firewalld
+          ansible_become: true

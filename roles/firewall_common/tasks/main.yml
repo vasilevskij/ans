@@ -1,0 +1,15 @@
+---
+# roles/firewall_common/tasks/main.yml
+
+- name: Определение типа файервола
+  include_tasks: detect-firewall.yml
+  tags: always
+
+- name: Валидация конфигурации
+  include_tasks: validate-config.yml
+  tags: always
+
+- name: Резервное копирование конфигурации
+  include_tasks: backup.yml
+  when: firewall_backup | default(true)
+  tags: backup

@@ -1,0 +1,6 @@
+---
+# roles/ufw/handlers/main.yml
+
+- name: reload ufw
+  command: ufw reload
+  listen: reload ufw

@@ -1,0 +1,113 @@
+---
+# roles/ufw/tasks/main.yml
+# Настройка UFW для Debian/Ubuntu
+
+- name: Установка пакета UFW
+  apt:
+    name: ufw
+    state: present
+    update_cache: yes
+
+- name: Остановка UFW перед сбросом
+  service:
+    name: ufw
+    state: stopped
+  when: firewall_reset | default(false)
+
+- name: Сброс правил UFW
+  ufw:
+    state: reset
+  when: firewall_reset | default(false)
+
+- name: Политики по умолчанию
+  ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+  loop:
+    - direction: incoming
+      policy: "{{ firewall_default_in | default('deny') }}"
+    - direction: outgoing
+      policy: "{{ firewall_default_out | default('allow') }}"
+    - direction: routed
+      policy: "{{ firewall_default_forward | default('deny') }}"
+
+- name: Применение стандартных правил
+  ufw:
+    rule: "{{ item.rule | default('allow') }}"
+    port: "{{ item.port | string }}"
+    proto: "{{ item.proto | default('tcp') }}"
+    direction: "{{ item.direction | default('in') }}"
+    src: "{{ item.src | default(omit) }}"
+    dest: "{{ item.dest | default(omit) }}"
+    interface: "{{ item.interface | default(omit) }}"
+    comment: "{{ item.comment | default('Ansible managed') }}"
+  loop: "{{ firewall_rules | default([]) }}"
+  loop_control:
+    label: "{{ item.rule | default('allow') }} {{ item.port }}/{{ item.proto | default('tcp') }}"
+  notify: reload ufw
+
+- name: Применение кастомных портов
+  ufw:
+    rule: "{{ item.rule | default('allow') }}"
+    port: "{{ item.port | string }}"
+    proto: "{{ item.proto | default('tcp') }}"
+    src: "{{ item.allowed_ips | default(omit) }}"
+    comment: "{{ item.comment | default('Custom port') }}"
+  loop: "{{ custom_ports | default([]) }}"
+  loop_control:
+    label: "{{ item.port }}/{{ item.proto | default('tcp') }}"
+  when: custom_ports | default([]) | length > 0
+  notify: reload ufw
+
+- name: Rate limiting SSH
+  ufw:
+    rule: limit
+    port: "22"
+    proto: tcp
+    comment: "SSH rate limiting"
+  when: firewall_rate_limit_ssh | default(true)
+  notify: reload ufw
+
+- name: Rate limiting HTTP
+  ufw:
+    rule: limit
+    port: "80"
+    proto: tcp
+    comment: "HTTP rate limiting"
+  when: firewall_rate_limit_http | default(false)
+  notify: reload ufw
+
+- name: Rate limiting HTTPS
+  ufw:
+    rule: limit
+    port: "443"
+    proto: tcp
+    comment: "HTTPS rate limiting"
+  when: firewall_rate_limit_https | default(false)
+  notify: reload ufw
+
+- name: Настройка уровня логирования UFW
+  ufw:
+    logging: "{{ firewall_logging_level | default('low') }}"
+
+- name: Включение UFW
+  ufw:
+    state: enabled
+
+- name: Проверка статуса UFW
+  command: ufw status verbose
+  register: ufw_status_check
+  changed_when: false
+
+- name: Вывод статуса UFW (debug)
+  debug:
+    msg: "{{ ufw_status_check.stdout_lines }}"
+  when: debug_mode | default(false)
+
+- name: Запись статуса UFW в лог
+  copy:
+    content: |
+      UFW Status — {{ inventory_hostname }} — {{ ansible_date_time.iso8601 }}
+      {{ ufw_status_check.stdout }}
+    dest: "/var/log/ansible-firewall/ufw-{{ inventory_hostname }}-{{ ansible_date_time.date }}.log"
+    mode: '0644'

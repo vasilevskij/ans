@@ -1,0 +1,100 @@
+---
+# playbook.yml — Главный плейбук настройки файерволов
+# Поддерживает UFW (Debian/Ubuntu) и Firewalld (RHEL/Rocky/Alma)
+
+- name: Настройка межсетевых экранов UFW и Firewalld
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+    debug_mode: false
+    firewall_backup: true
+    firewall_allow_no_firewall: false
+
+  pre_tasks:
+    - name: Создание директории для логов
+      file:
+        path: /var/log/ansible-firewall
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+      tags: always
+
+    - name: Запись начала выполнения
+      copy:
+        content: |
+          ===== НАЧАЛО ВЫПОЛНЕНИЯ PLAYBOOK =====
+          Time:     {{ ansible_date_time.iso8601 }}
+          Host:     {{ inventory_hostname }}
+          OS:       {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Family:   {{ ansible_os_family }}
+        dest: "/var/log/ansible-firewall/run-{{ ansible_date_time.date }}.log"
+        mode: '0644'
+      tags: always
+
+  roles:
+    # 1. Определение и валидация файервола
+    - role: firewall_common
+      tags: [always, common]
+
+    # 2. UFW — только для Debian/Ubuntu
+    - role: ufw
+      when:
+        - ansible_os_family == 'Debian'
+        - target_firewall == 'ufw'
+      tags: [ufw, firewall_config]
+
+    # 3. Firewalld — только для RedHat/Rocky/Alma
+    - role: firewalld
+      when:
+        - ansible_os_family in ['RedHat', 'Fedora']
+        - target_firewall == 'firewalld'
+      tags: [firewalld, firewall_config]
+
+    # 4. Общее усиление безопасности (для всех ОС)
+    - role: firewall_security
+      tags: [security]
+
+  post_tasks:
+    - name: Финальная проверка — UFW
+      command: ufw status verbose
+      register: final_ufw
+      changed_when: false
+      when: target_firewall == 'ufw'
+      tags: always
+
+    - name: Финальная проверка — Firewalld
+      command: firewall-cmd --list-all
+      register: final_firewalld
+      changed_when: false
+      when: target_firewall == 'firewalld'
+      tags: always
+
+    - name: Вывод итогового статуса UFW
+      debug:
+        msg: "{{ final_ufw.stdout_lines }}"
+      when:
+        - target_firewall == 'ufw'
+        - final_ufw is defined
+      tags: always
+
+    - name: Вывод итогового статуса Firewalld
+      debug:
+        msg: "{{ final_firewalld.stdout_lines }}"
+      when:
+        - target_firewall == 'firewalld'
+        - final_firewalld is defined
+      tags: always
+
+    - name: Итоговый отчёт
+      debug:
+        msg: |
+          ✓ PLAYBOOK ЗАВЕРШЁН УСПЕШНО
+          Хост:     {{ inventory_hostname }}
+          OS:       {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Файервол: {{ target_firewall }}
+          Логи:     /var/log/ansible-firewall/
+          Бэкапы:   /var/backup/firewall/
+      tags: always

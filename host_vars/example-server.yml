@@ -1,0 +1,38 @@
+---
+# host_vars/example-server.yml
+# Пример переменных для конкретного сервера (веб-сервер)
+# Скопируйте этот файл как host_vars/<hostname>.yml и адаптируйте
+
+# Принудительно задать тип файервола (опционально)
+# firewall_force: ufw
+
+# Переопределить правила для этого хоста
+firewall_rules:
+  - port: 22
+    proto: tcp
+    rule: allow
+    comment: "SSH"
+  - port: 80
+    proto: tcp
+    rule: allow
+    comment: "HTTP"
+  - port: 443
+    proto: tcp
+    rule: allow
+    comment: "HTTPS"
+  - port: 8080
+    proto: tcp
+    rule: allow
+    src: "10.0.0.0/8"
+    comment: "App server internal"
+
+# Кастомные порты
+custom_ports:
+  - port: 9000
+    proto: tcp
+    allowed_ips: "127.0.0.1"
+    comment: "PHP-FPM local"
+
+# SSH hardening (переопределение для этого хоста)
+ssh_max_auth_tries: 3
+ssh_permit_root_login: "no"

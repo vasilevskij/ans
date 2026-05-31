@@ -1,0 +1,62 @@
+---
+# roles/firewall_common/tasks/validate-config.yml
+# Валидирует все переменные до применения конфигурации
+
+- name: Валидация основных политик
+  assert:
+    that:
+      - firewall_default_in is defined
+      - firewall_default_out is defined
+      - firewall_default_in in ['allow', 'deny', 'reject']
+      - firewall_default_out in ['allow', 'deny', 'reject']
+    fail_msg: |
+      Ошибка конфигурации:
+        firewall_default_in:  {{ firewall_default_in | default('UNDEFINED') }}
+        firewall_default_out: {{ firewall_default_out | default('UNDEFINED') }}
+      Допустимые значения: allow, deny, reject
+
+- name: Валидация формата firewall_rules
+  assert:
+    that:
+      - item.port is defined
+      - item.port | int >= 1
+      - item.port | int <= 65535
+      - item.proto is not defined or item.proto in ['tcp', 'udp']
+      - item.rule is not defined or item.rule in ['allow', 'deny', 'reject']
+    fail_msg: |
+      Ошибка в правиле: {{ item | to_nice_yaml }}
+      port: 1–65535; proto: tcp/udp; rule: allow/deny/reject
+  loop: "{{ firewall_rules | default([]) }}"
+  loop_control:
+    label: "port {{ item.port }}/{{ item.proto | default('tcp') }}"
+
+- name: Валидация параметров SSH
+  assert:
+    that:
+      - ssh_permit_root_login in ['yes', 'no', 'without-password', 'prohibit-password']
+      - ssh_password_auth in ['yes', 'no']
+      - ssh_pubkey_auth in ['yes', 'no']
+      - ssh_x11_forwarding in ['yes', 'no']
+      - ssh_max_auth_tries | int >= 1
+      - ssh_max_auth_tries | int <= 10
+    fail_msg: "Ошибка конфигурации SSH — проверьте group_vars/all.yml"
+
+- name: Валидация firewall_ports (Firewalld)
+  assert:
+    that:
+      - item.port | int >= 1
+      - item.port | int <= 65535
+      - item.proto | default('tcp') in ['tcp', 'udp']
+    fail_msg: "Ошибка в firewall_ports: {{ item | to_nice_yaml }}"
+  loop: "{{ firewall_ports | default([]) }}"
+  loop_control:
+    label: "{{ item.port }}/{{ item.proto | default('tcp') }}"
+  when: target_firewall | trim == 'firewalld'
+
+- name: Валидация успешна (debug)
+  debug:
+    msg: |
+      ✓ Конфигурация валидна
+        Правила:  {{ firewall_rules | default([]) | length }} шт.
+        Файервол: {{ target_firewall }}
+  when: debug_mode | default(false)

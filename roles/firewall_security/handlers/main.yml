@@ -1,0 +1,9 @@
+---
+# roles/firewall_security/handlers/main.yml
+
+- name: restart sshd
+  service:
+    name: sshd
+    state: restarted
+    enabled: yes
+  listen: restart sshd

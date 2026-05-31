@@ -1,0 +1,16 @@
+---
+# roles/firewalld/handlers/main.yml
+
+- name: reload firewalld
+  service:
+    name: firewalld
+    state: reloaded
+    enabled: yes
+  listen: reload firewalld
+
+- name: enable firewalld
+  service:
+    name: firewalld
+    state: started
+    enabled: yes
+  listen: enable firewalld

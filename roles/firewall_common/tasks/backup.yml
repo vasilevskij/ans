@@ -1,0 +1,171 @@
+---
+# roles/firewall_common/tasks/backup.yml
+# Резервное копирование текущей конфигурации файервола
+
+- name: Создание корневой директории бэкапов
+  file:
+    path: "{{ firewall_backup_base_dir }}"
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+
+- name: Создание поддиректории для текущей даты
+  file:
+    path: "{{ firewall_backup_dir }}"
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+
+- name: Запись системной информации в бэкап
+  copy:
+    content: |
+      Backup created: {{ ansible_date_time.iso8601 }}
+      Host:           {{ inventory_hostname }}
+      OS:             {{ ansible_distribution }} {{ ansible_distribution_version }}
+      OS Family:      {{ ansible_os_family }}
+      Target Firewall: {{ target_firewall }}
+      Active Firewall: {{ firewall_currently_active }}
+    dest: "{{ firewall_backup_dir }}/system-info.txt"
+    mode: '0644'
+    owner: root
+    group: root
+
+# ──────────── UFW ────────────
+
+- name: Бэкап конфигурации UFW
+  block:
+    - name: Статус UFW verbose
+      command: ufw status verbose
+      register: ufw_status_out
+      changed_when: false
+
+    - name: Правила UFW numbered
+      command: ufw status numbered
+      register: ufw_rules_out
+      changed_when: false
+
+    - name: Сохранение статуса UFW
+      copy:
+        content: |
+          === UFW Status Verbose ===
+          {{ ufw_status_out.stdout }}
+
+          === UFW Rules Numbered ===
+          {{ ufw_rules_out.stdout }}
+        dest: "{{ firewall_backup_dir }}/ufw-status.txt"
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Поиск конфигурационных файлов UFW
+      find:
+        paths: /etc/ufw
+        patterns: "*.rules,*.conf"
+        file_type: file
+      register: ufw_cfg_files
+
+    - name: Копирование конфигурационных файлов UFW
+      copy:
+        src: "{{ item.path }}"
+        dest: "{{ firewall_backup_dir }}/ufw-{{ item.path | basename }}"
+        remote_src: yes
+        mode: preserve
+        owner: root
+        group: root
+      loop: "{{ ufw_cfg_files.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      when: ufw_cfg_files.matched > 0
+  when: target_firewall | trim == 'ufw' or firewall_currently_active | trim == 'ufw'
+  ignore_errors: yes
+
+# ──────────── Firewalld ────────────
+
+- name: Бэкап конфигурации Firewalld
+  block:
+    - name: Список зон Firewalld
+      command: firewall-cmd --list-all-zones
+      register: fwd_zones_out
+      changed_when: false
+
+    - name: Текущая конфигурация Firewalld
+      command: firewall-cmd --list-all
+      register: fwd_cfg_out
+      changed_when: false
+
+    - name: Сохранение конфигурации Firewalld
+      copy:
+        content: |
+          === Firewalld Zones ===
+          {{ fwd_zones_out.stdout }}
+
+          === Firewalld Current Config ===
+          {{ fwd_cfg_out.stdout }}
+        dest: "{{ firewall_backup_dir }}/firewalld-status.txt"
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Поиск XML файлов Firewalld
+      find:
+        paths: /etc/firewalld
+        patterns: "*.xml"
+        file_type: file
+        recurse: yes
+      register: fwd_xml_files
+
+    - name: Копирование XML файлов Firewalld
+      copy:
+        src: "{{ item.path }}"
+        dest: "{{ firewall_backup_dir }}/firewalld-{{ item.path | basename }}"
+        remote_src: yes
+        mode: preserve
+        owner: root
+        group: root
+      loop: "{{ fwd_xml_files.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      when: fwd_xml_files.matched > 0
+  when: target_firewall | trim == 'firewalld' or firewall_currently_active | trim == 'firewalld'
+  ignore_errors: yes
+
+# ──────────── Архивирование ────────────
+
+- name: Проверка наличия архива
+  stat:
+    path: "{{ firewall_backup_archive_path }}"
+  register: archive_stat
+
+- name: Создание tar.gz архива бэкапа
+  archive:
+    path: "{{ firewall_backup_dir }}"
+    dest: "{{ firewall_backup_archive_path }}"
+    format: gz
+    owner: root
+    group: root
+    mode: '0600'
+  when: not archive_stat.stat.exists
+
+# ──────────── Очистка старых бэкапов ────────────
+
+- name: Поиск устаревших архивов (старше 7 дней)
+  find:
+    paths: "{{ firewall_backup_base_dir }}"
+    patterns: "*.tar.gz"
+    age: "7d"
+    age_stamp: mtime
+  register: old_backups
+  when: firewall_cleanup_old_backups | default(true)
+
+- name: Удаление устаревших архивов
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ old_backups.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when:
+    - firewall_cleanup_old_backups | default(true)
+    - old_backups.matched | default(0) > 0
