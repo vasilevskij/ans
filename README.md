@@ -1,4 +1,4 @@
-# Ansible Firewall Playbook
+# Реализация плейбука Ansible для настройки межсетевых экранов UFW и Firewalld
 
 Автоматизированная настройка файерволов на Linux:
 - **UFW** — Debian / Ubuntu
