@@ -9,7 +9,7 @@
 
 Автоматизированная настройка файерволов на Linux:
 - **UFW** — Debian / Ubuntu
-- **Firewalld** — RHEL / Rocky Linux / AlmaLinux
+- **Firewalld** — RHEL / Rocky Linux / AlmaLinux / fedora
 
 ОС определяется автоматически по `ansible_os_family`.
 
